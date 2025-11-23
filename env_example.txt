@@ -1,0 +1,19 @@
+﻿# ConfiguraÃ§Ãµes da API Serpro
+AUTH_URL=https://autenticacao.sapi.serpro.gov.br/authenticate
+API_BASE_URL=https://gateway.apiserpro.serpro.gov.br/integra-contador/v1
+
+# Credenciais de autenticaÃ§Ã£o
+CONSUMER_KEY=seu_consumer_key_aqui
+CONSUMER_SECRET=seu_consumer_secret_aqui
+
+# Certificado digital
+CERTIFICADO_PATH=seu_certificado.pfx
+CERTIFICADO_SENHA=sua_senha_aqui
+
+# CNPJs
+CONTRATANTE_CNPJ=cnpj_aqui
+AUTOR_PEDIDO_CNPJ=cnpj_aqui
+
+# Paths (opcional - valores padrÃ£o serÃ£o usados se nÃ£o especificados)
+EMPRESAS_JSON_PATH=empresas.json
+PDF_OUTPUT_PATH=C:\temp

@@ -1,0 +1,38 @@
+# Ambiente virtual
+venv/
+env/
+ENV/
+.venv
+
+# Arquivos Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Arquivos de certificado (não versionar por segurança)
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Variáveis de ambiente
+.env
+
+# Arquivos PDF gerados
+*.pdf
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+

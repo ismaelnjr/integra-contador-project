@@ -1,0 +1,4 @@
+requests-pkcs12>=1.0.0
+pycurl>=7.45.0
+python-dotenv>=1.0.0
+
