@@ -3,12 +3,16 @@
 import base64
 import json
 import logging
-import re
 from typing import Dict, Any, Optional, List
 
 from integra_contador.api.client import SerproAPIClient
 from integra_contador.api.auth import SerproAuthenticator
-from integra_contador.config.settings import Settings
+from integra_contador.api.validators import (
+    validar_periodo_apuracao,
+    validar_data_consolidacao,
+    verificar_mensagem_sem_valor_devido
+)
+from integra_contador.settings import Settings
 from integra_contador.models.das import Das
 
 logger = logging.getLogger(__name__)
@@ -69,47 +73,6 @@ class PGDASDService(SerproAPIClient):
             }
         }
     
-    def _validar_periodo_apuracao(self, periodo: str) -> bool:
-        """
-        Valida formato do período de apuração (AAAAMM).
-        
-        Args:
-            periodo: Período no formato AAAAMM
-            
-        Returns:
-            True se válido
-        """
-        if not periodo or len(periodo) != 6:
-            return False
-        if not periodo.isdigit():
-            return False
-        ano = int(periodo[:4])
-        mes = int(periodo[4:6])
-        return 2000 <= ano <= 2100 and 1 <= mes <= 12
-    
-    def _validar_data_consolidacao(self, data: str) -> bool:
-        """
-        Valida formato da data de consolidação (AAAAMMDD).
-        
-        Args:
-            data: Data no formato AAAAMMDD
-            
-        Returns:
-            True se válido
-        """
-        if not data or len(data) != 8:
-            return False
-        if not data.isdigit():
-            return False
-        try:
-            ano = int(data[:4])
-            mes = int(data[4:6])
-            dia = int(data[6:8])
-            # Validação básica (não verifica se a data realmente existe)
-            return 2000 <= ano <= 2100 and 1 <= mes <= 12 and 1 <= dia <= 31
-        except ValueError:
-            return False
-    
     def gerar_das(
         self,
         cnpj: str,
@@ -125,20 +88,20 @@ class PGDASDService(SerproAPIClient):
             data_consolidacao: Data de consolidação no formato AAAAMMDD (opcional)
             
         Returns:
-            Lista de objetos Das gerados
+            Lista de objetos Das gerados (pode ser vazia se não houver valor devido)
             
         Raises:
-            ValueError: Se período ou data forem inválidos
+            ValueError: Se período ou data forem inválidos, ou se não houver valor devido
             Exception: Se a geração falhar
         """
         # Normaliza CNPJ (remove formatação)
         cnpj_clean = ''.join(filter(str.isdigit, cnpj))
         
         # Validações
-        if not self._validar_periodo_apuracao(periodo_apuracao):
+        if not validar_periodo_apuracao(periodo_apuracao):
             raise ValueError(f"Período de apuração inválido: {periodo_apuracao}. Use formato AAAAMM (ex: 202509)")
         
-        if data_consolidacao and not self._validar_data_consolidacao(data_consolidacao):
+        if data_consolidacao and not validar_data_consolidacao(data_consolidacao):
             raise ValueError(f"Data de consolidação inválida: {data_consolidacao}. Use formato AAAAMMDD (ex: 20250930)")
         
         logger.info(f"Gerando DAS para CNPJ: {cnpj_clean}, Período: {periodo_apuracao}")
@@ -170,19 +133,49 @@ class PGDASDService(SerproAPIClient):
             
             resultado = self._parse_response(response_body)
             
-            # Verifica se há mensagens de erro
+            # Verifica mensagens primeiro
             mensagens = resultado.get('mensagens', [])
             if mensagens:
                 for msg in mensagens:
                     if isinstance(msg, dict) and msg.get('codigo'):
-                        logger.warning(f"Mensagem da API: {msg.get('texto', '')}")
+                        codigo = msg.get('codigo', '')
+                        texto = msg.get('texto', '')
+                        logger.warning(f"Mensagem da API: {codigo} - {texto}")
+                
+                # Verifica se há mensagem indicando ausência de valor devido
+                if verificar_mensagem_sem_valor_devido(mensagens):
+                    logger.info(f"Não há valor devido para CNPJ {cnpj_clean}, período {periodo_apuracao}")
+                    raise ValueError(
+                        f"Não foi gerado DAS por não haver valor devido para o período {periodo_apuracao}. "
+                        f"O valor já pode ter sido recolhido anteriormente."
+                    )
             
             # Parseia dados aninhados
-            dados_str = resultado.get('dados', '[]')
+            dados_str = resultado.get('dados', None)
+            
+            # Trata casos onde dados pode ser None, string vazia, ou lista vazia
+            if dados_str is None:
+                logger.warning("Campo 'dados' não encontrado na resposta")
+                raise ValueError("Resposta da API não contém dados válidos")
+            
+            # Se for string, tenta parsear
             if isinstance(dados_str, str):
-                dados = json.loads(dados_str)
+                dados_str = dados_str.strip()
+                if not dados_str or dados_str == 'null' or dados_str == '[]' or dados_str == '{}':
+                    logger.warning("Campo 'dados' está vazio na resposta")
+                    raise ValueError("Não há dados de DAS na resposta da API")
+                try:
+                    dados = json.loads(dados_str)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Erro ao parsear JSON de dados: {e}")
+                    raise ValueError(f"Resposta da API contém dados inválidos: {str(e)}")
             else:
                 dados = dados_str
+            
+            # Verifica se dados está vazio após parsear
+            if not dados or (isinstance(dados, list) and len(dados) == 0):
+                logger.warning("Nenhum dado de DAS encontrado na resposta")
+                raise ValueError("Não há dados de DAS na resposta da API")
             
             # A resposta pode ser uma lista de DAS ou um único objeto
             if not isinstance(dados, list):
@@ -191,33 +184,45 @@ class PGDASDService(SerproAPIClient):
             # Processa cada DAS retornado
             das_list = []
             for das_data in dados:
-                pdf_base64 = das_data.get('pdf')
+                # Verifica se é um objeto válido (não None, não vazio)
+                if not das_data or (isinstance(das_data, dict) and not das_data):
+                    logger.warning("Dados de DAS inválidos ou vazios")
+                    continue
+                
+                pdf_base64 = das_data.get('pdf') if isinstance(das_data, dict) else None
                 
                 if not pdf_base64:
                     logger.warning("PDF não encontrado na resposta para um dos DAS")
                     continue
                 
-                # Decodifica base64 para bytes
-                pdf_bytes = base64.b64decode(pdf_base64)
-                
-                # Cria objeto Das
-                das_obj = Das.from_dict(das_data, pdf_bytes)
-                das_list.append(das_obj)
-                
-                logger.info(
-                    f"DAS gerado com sucesso - "
-                    f"CNPJ: {das_obj.cnpjCompleto}, "
-                    f"Período: {das_obj.detalhamento.periodoApuracao}, "
-                    f"Documento: {das_obj.detalhamento.numeroDocumento}, "
-                    f"Total: R$ {das_obj.detalhamento.valores.total:.2f}, "
-                    f"PDF: {len(pdf_bytes)} bytes"
-                )
+                try:
+                    # Decodifica base64 para bytes
+                    pdf_bytes = base64.b64decode(pdf_base64)
+                    
+                    # Cria objeto Das
+                    das_obj = Das.from_dict(das_data, pdf_bytes)
+                    das_list.append(das_obj)
+                    
+                    logger.info(
+                        f"DAS gerado com sucesso - "
+                        f"CNPJ: {das_obj.cnpjCompleto}, "
+                        f"Período: {das_obj.detalhamento.periodoApuracao}, "
+                        f"Documento: {das_obj.detalhamento.numeroDocumento}, "
+                        f"Total: R$ {das_obj.detalhamento.valores.total:.2f}, "
+                        f"PDF: {len(pdf_bytes)} bytes"
+                    )
+                except Exception as e:
+                    logger.error(f"Erro ao processar DAS: {e}")
+                    continue
             
             if not das_list:
-                raise Exception("Nenhum DAS foi gerado na resposta da API")
+                raise ValueError("Nenhum DAS válido foi gerado na resposta da API")
             
             return das_list
             
+        except ValueError:
+            # Re-lança ValueError sem modificar
+            raise
         except Exception as e:
             logger.error(f"Erro ao gerar DAS: {e}")
             raise

@@ -37,7 +37,7 @@ class Settings:
     # Paths
     EMPRESAS_JSON_PATH: str = os.getenv(
         'EMPRESAS_JSON_PATH',
-        str(Path(__file__).parent.parent.parent / 'empresas.json')
+        str(Path(__file__).parent.parent / 'empresas.json')
     )
     PDF_OUTPUT_PATH: str = os.getenv(
         'PDF_OUTPUT_PATH',

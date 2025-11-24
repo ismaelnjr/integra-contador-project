@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, Tuple
 import pycurl
 
 from integra_contador.api.auth import SerproAuthenticator
-from integra_contador.config.settings import Settings
+from integra_contador.settings import Settings
 
 logger = logging.getLogger(__name__)
 

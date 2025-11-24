@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from integra_contador.models.empresa import Empresa
-from integra_contador.config.settings import Settings
+from integra_contador.settings import Settings
 
 logger = logging.getLogger(__name__)
 

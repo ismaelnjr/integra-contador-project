@@ -1,15 +1,22 @@
-"""Script para gerar DAS em lote para empresas do Simples Nacional"""
+"""Script para gerar guias DCTFWEB em lote para empresas"""
 
+import json
 import logging
 import re
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
+
+# Adiciona o diretório raiz do projeto ao PYTHONPATH
+# Permite executar o script de qualquer local
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from integra_contador.api.auth import SerproAuthenticator
-from integra_contador.api.pgdasd import PGDASDService
-from integra_contador.config.settings import Settings
-from integra_contador.repositories.empresa_repository import EmpresaRepository
+from integra_contador.api.dctfweb import DCTFWEBService
+from integra_contador.settings import Settings
+from app.repositories.empresa_repository import EmpresaRepository
 
 # Configuração de logging
 logging.basicConfig(
@@ -50,89 +57,119 @@ def normalizar_periodo(periodo_input: str) -> Optional[str]:
     return None
 
 
-def solicitar_periodo() -> str:
+def solicitar_ano_pa() -> Optional[str]:
     """
-    Solicita período de apuração ao usuário.
+    Solicita ano de apuração ao usuário.
     
     Returns:
-        Período no formato AAAAMM
+        Ano no formato AAAA ou None se não informado
     """
     while True:
-        periodo_input = input(
-            "\nDigite o período de apuração (formato MM/AAAA ou AAAAMM, ex: 09/2025 ou 202509): "
+        ano_input = input(
+            "\nDigite o ano de apuração (formato AAAA, ex: 2025): "
         ).strip()
         
-        periodo_normalizado = normalizar_periodo(periodo_input)
+        if not ano_input:
+            return None
         
-        if periodo_normalizado:
-            # Validação básica
-            ano = int(periodo_normalizado[:4])
-            mes = int(periodo_normalizado[4:6])
-            if 2000 <= ano <= 2100 and 1 <= mes <= 12:
-                return periodo_normalizado
+        if len(ano_input) == 4 and ano_input.isdigit():
+            ano_int = int(ano_input)
+            if 2000 <= ano_int <= 2100:
+                return ano_input
             else:
-                print("Erro: Ano deve estar entre 2000-2100 e mês entre 01-12")
+                print("Erro: Ano deve estar entre 2000-2100")
         else:
-            print("Erro: Formato inválido. Use MM/AAAA (ex: 09/2025) ou AAAAMM (ex: 202509)")
+            print("Erro: Formato inválido. Use formato AAAA (ex: 2025)")
 
 
-def solicitar_data_consolidacao() -> Optional[str]:
+def solicitar_mes_pa() -> Optional[str]:
     """
-    Solicita data de consolidação opcional ao usuário.
+    Solicita mês de apuração ao usuário.
     
     Returns:
-        Data no formato AAAAMMDD ou None se não informada
+        Mês no formato MM ou None se não informado
     """
-    resposta = input(
-        "\nDeseja informar data de consolidação? (s/N): "
+    while True:
+        mes_input = input(
+            "Digite o mês de apuração (formato MM, ex: 10 ou 01): "
+        ).strip()
+        
+        if not mes_input:
+            return None
+        
+        if mes_input.isdigit():
+            mes_int = int(mes_input)
+            if 1 <= mes_int <= 12:
+                return f"{mes_int:02d}"
+            else:
+                print("Erro: Mês deve estar entre 01-12")
+        else:
+            print("Erro: Formato inválido. Use formato MM (ex: 10 ou 01)")
+
+
+def solicitar_dados_guia() -> Dict[str, Any]:
+    """
+    Solicita dados para gerar a guia.
+    
+    Returns:
+        Dicionário com dados da guia (anoPA e mesPA são obrigatórios)
+    """
+    dados_guia = {}
+    
+    # Solicita ano de apuração (obrigatório)
+    ano_pa = solicitar_ano_pa()
+    if ano_pa:
+        dados_guia['anoPA'] = ano_pa
+    
+    # Solicita mês de apuração (obrigatório)
+    mes_pa = solicitar_mes_pa()
+    if mes_pa:
+        dados_guia['mesPA'] = mes_pa
+    
+    # Pergunta sobre categoria (opcional)
+    resposta_categoria = input(
+        "\nDeseja informar categoria? (padrão: GERAL_MENSAL) (s/N): "
     ).strip().lower()
     
-    if resposta not in ['s', 'sim', 'y', 'yes']:
-        return None
+    if resposta_categoria in ['s', 'sim', 'y', 'yes']:
+        categoria = input("Digite a categoria: ").strip()
+        if categoria:
+            dados_guia['categoria'] = categoria
     
-    while True:
-        data_input = input(
-            "Digite a data de consolidação (formato DD/MM/AAAA ou AAAAMMDD, ex: 30/09/2025 ou 20250930): "
-        ).strip()
+    # Pergunta se deseja informar dados adicionais via JSON
+    resposta = input(
+        "\nDeseja informar dados adicionais da guia em formato JSON? (s/N): "
+    ).strip().lower()
+    
+    if resposta in ['s', 'sim', 'y', 'yes']:
+        print("\nDigite os dados adicionais em formato JSON (ex: {\"campo1\": \"valor1\", \"campo2\": \"valor2\"})")
+        print("Ou pressione Enter para pular:")
+        json_input = input().strip()
         
-        # Formato DD/MM/AAAA
-        match_dd_mm_aaaa = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', data_input)
-        if match_dd_mm_aaaa:
-            dia = match_dd_mm_aaaa.group(1).zfill(2)
-            mes = match_dd_mm_aaaa.group(2).zfill(2)
-            ano = match_dd_mm_aaaa.group(3)
-            data_normalizada = f"{ano}{mes}{dia}"
-            
-            # Validação básica
-            if len(data_normalizada) == 8 and data_normalizada.isdigit():
-                return data_normalizada
-            else:
-                print("Erro: Data inválida")
-                continue
-        
-        # Formato AAAAMMDD
-        match_aaaammdd = re.match(r'^(\d{4})(\d{2})(\d{2})$', data_input)
-        if match_aaaammdd:
-            return data_input
-        
-        print("Erro: Formato inválido. Use DD/MM/AAAA (ex: 30/09/2025) ou AAAAMMDD (ex: 20250930)")
+        if json_input:
+            try:
+                dados_adicionais = json.loads(json_input)
+                dados_guia.update(dados_adicionais)
+            except json.JSONDecodeError as e:
+                print(f"Erro ao parsear JSON: {e}")
+                print("Continuando sem dados adicionais...")
+    
+    return dados_guia
 
 
-def gerar_das_empresa(
-    service: PGDASDService,
+def gerar_guia_empresa(
+    service: DCTFWEBService,
     empresa,
-    periodo_apuracao: str,
-    data_consolidacao: Optional[str],
+    dados_guia: Dict[str, Any],
     output_path: str
 ) -> Tuple[bool, str]:
     """
-    Gera DAS para uma empresa específica.
+    Gera guia DCTFWEB para uma empresa específica.
     
     Args:
-        service: Instância do serviço PGDASD
+        service: Instância do serviço DCTFWEB
         empresa: Objeto Empresa ou dicionário com dados da empresa
-        periodo_apuracao: Período de apuração no formato AAAAMM
-        data_consolidacao: Data de consolidação opcional no formato AAAAMMDD
+        dados_guia: Dicionário com dados necessários para gerar a guia
         output_path: Caminho para salvar os PDFs
         
     Returns:
@@ -153,34 +190,34 @@ def gerar_das_empresa(
     try:
         logger.info(f"Processando empresa ID {id_empresa} - {razao} (CNPJ: {cnpj})")
         
-        # Gera DAS
-        das_list = service.gerar_das(
+        # Gera guia
+        guia = service.gerar_guia(
             cnpj=cnpj,
-            periodo_apuracao=periodo_apuracao,
-            data_consolidacao=data_consolidacao
+            dados_guia=dados_guia
         )
         
-        # Salva cada DAS gerado
-        for idx, das in enumerate(das_list):
-            # Nome do arquivo: DAS_{cnpj}_{periodo}_{indice}.pdf
-            nome_arquivo = f"DAS_{das.cnpjCompleto}_{periodo_apuracao}"
-            if len(das_list) > 1:
-                nome_arquivo += f"_{idx + 1}"
-            nome_arquivo += ".pdf"
-            
-            caminho_completo = Path(output_path) / nome_arquivo
-            
-            # Salva PDF
-            with open(caminho_completo, "wb") as f:
-                f.write(das.pdf)
-            
-            logger.info(
-                f"DAS salvo: {caminho_completo} | "
-                f"Documento: {das.detalhamento.numeroDocumento} | "
-                f"Total: R$ {das.detalhamento.valores.total:.2f}"
-            )
+        # Nome do arquivo: GUIA_DCTFWEB_{cnpj}_{anoPA}_{mesPA}.pdf
+        cnpj_clean = ''.join(filter(str.isdigit, cnpj))
+        ano_pa = dados_guia.get('anoPA', '')
+        mes_pa = dados_guia.get('mesPA', '')
+        nome_arquivo = f"GUIA_DCTFWEB_{cnpj_clean}"
+        if ano_pa and mes_pa:
+            nome_arquivo += f"_{ano_pa}{mes_pa}"
+        nome_arquivo += ".pdf"
         
-        return True, f"Sucesso - {len(das_list)} DAS gerado(s)"
+        caminho_completo = Path(output_path) / nome_arquivo
+        
+        # Salva PDF
+        with open(caminho_completo, "wb") as f:
+            f.write(guia.pdf)
+        
+        logger.info(
+            f"Guia salva: {caminho_completo} | "
+            f"CNPJ: {guia.cnpjCompleto or cnpj_clean} | "
+            f"PDF: {len(guia.pdf)} bytes"
+        )
+        
+        return True, f"Sucesso - Guia gerada"
         
     except ValueError as e:
         error_msg = f"Erro de validação: {str(e)}"
@@ -188,7 +225,7 @@ def gerar_das_empresa(
         return False, error_msg
         
     except Exception as e:
-        error_msg = f"Erro ao gerar DAS: {str(e)}"
+        error_msg = f"Erro ao gerar guia: {str(e)}"
         logger.error(f"Empresa ID {id_empresa} - {error_msg}")
         return False, error_msg
 
@@ -202,7 +239,7 @@ def main():
         
         # Inicializa componentes
         authenticator = SerproAuthenticator()
-        service = PGDASDService(authenticator)
+        service = DCTFWEBService(authenticator)
         repository = EmpresaRepository()
         
         # Carrega empresas
@@ -214,17 +251,18 @@ def main():
         
         print(f"\n{len(empresas)} empresa(s) encontrada(s)")
         
-        # Solicita período
-        periodo_apuracao = solicitar_periodo()
-        print(f"Período selecionado: {periodo_apuracao}")
+        # Solicita dados da guia
+        dados_guia = solicitar_dados_guia()
         
-        # Solicita data de consolidação (opcional)
-        data_consolidacao = solicitar_data_consolidacao()
-        if data_consolidacao:
-            print(f"Data de consolidação: {data_consolidacao}")
+        # Valida se anoPA e mesPA foram informados
+        if not dados_guia.get('anoPA') or not dados_guia.get('mesPA'):
+            print("\nErro: Ano e mês de apuração são obrigatórios!")
+            sys.exit(1)
+        
+        print(f"\nDados da guia: {json.dumps(dados_guia, indent=2, ensure_ascii=False)}")
         
         # Confirmação
-        print(f"\nProcessando {len(empresas)} empresa(s) para o período {periodo_apuracao}...")
+        print(f"\nProcessando {len(empresas)} empresa(s)...")
         confirmacao = input("Deseja continuar? (S/n): ").strip().lower()
         if confirmacao in ['n', 'nao', 'no', 'não']:
             print("Operação cancelada pelo usuário")
@@ -243,11 +281,10 @@ def main():
         print("="*80)
         
         for empresa in empresas:
-            sucesso, mensagem = gerar_das_empresa(
+            sucesso, mensagem = gerar_guia_empresa(
                 service=service,
                 empresa=empresa,
-                periodo_apuracao=periodo_apuracao,
-                data_consolidacao=data_consolidacao,
+                dados_guia=dados_guia,
                 output_path=output_path
             )
             

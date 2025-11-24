@@ -7,12 +7,21 @@ from typing import Optional, Dict, Any
 
 @dataclass
 class Empresa:
-    """Representa uma empresa no sistema"""
+    """
+    Representa uma empresa no sistema.
+    
+    Nota sobre nomenclatura:
+    Os atributos estão em camelCase (ex: protocoloRelatorio) para manter
+    compatibilidade direta com:
+    - A API Serpro que retorna dados neste formato
+    - O arquivo empresas.json que usa este formato
+    - Evita necessidade de mapeamento/conversão nos métodos from_dict/to_dict
+    """
     
     idempresas: int
     cnpj: str
     razao: str
-    protocoloRelatorio: str = ""
+    protocoloRelatorio: str = ""  # camelCase para compatibilidade com API/JSON
     
     def __post_init__(self):
         """Valida CNPJ após inicialização"""

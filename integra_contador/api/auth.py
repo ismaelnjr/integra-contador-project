@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Optional
 from requests_pkcs12 import post
 
-from integra_contador.config.settings import Settings
+from integra_contador.settings import Settings
 
 logger = logging.getLogger(__name__)
 

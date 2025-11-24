@@ -1,4 +1,10 @@
-"""Modelos de dados para DAS (Documento de Arrecadação do Simples Nacional)"""
+"""Modelos de dados para DAS (Documento de Arrecadação do Simples Nacional)
+
+Nota sobre nomenclatura:
+Os atributos estão em camelCase (ex: periodoApuracao, cnpjCompleto, numeroDocumento)
+para manter compatibilidade direta com a API Serpro que retorna dados neste formato.
+Isso evita necessidade de mapeamento/conversão nos métodos from_dict/to_dict.
+"""
 
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
