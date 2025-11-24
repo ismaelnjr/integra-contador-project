@@ -243,23 +243,52 @@ guia = dctfweb.gerar_guia(
 
 ## Arquivo empresas.json
 
-Formato do arquivo de entrada:
+Crie o arquivo `empresas.json` na raiz do projeto com a lista de empresas que deseja processar.
+
+**Importante:** Este arquivo contém dados sensíveis e está no `.gitignore` para não ser versionado.
+
+### Criar o arquivo
+
+Crie um arquivo chamado `empresas.json` na raiz do projeto com o seguinte formato:
 
 ```json
 [
   {
     "idempresas": 1,
-    "cnpj": "11.497.110/0001-27",
+    "cnpj": "11.111.111/0001-91",
     "razao": "Nome da Empresa",
     "protocoloRelatorio": ""
   }
 ]
 ```
 
-- `idempresas`: ID único da empresa
-- `cnpj`: CNPJ (aceita com ou sem formatação)
-- `razao`: Razão social
-- `protocoloRelatorio`: Protocolo do relatório (deixe vazio para nova solicitação)
+### Campos do arquivo
+
+- `idempresas`: ID único da empresa (número inteiro)
+- `cnpj`: CNPJ da empresa (aceita com ou sem formatação, ex: "11.111.111/0001-91" ou "11111111000191")
+- `razao`: Razão social da empresa
+- `protocoloRelatorio`: Protocolo do relatório SITFIS (deixe vazio `""` para nova solicitação)
+
+### Exemplo com múltiplas empresas
+
+```json
+[
+  {
+    "idempresas": 1,
+    "cnpj": "11.111.111/0001-91",
+    "razao": "Empresa A Ltda",
+    "protocoloRelatorio": ""
+  },
+  {
+    "idempresas": 2,
+    "cnpj": "22.333.444/0001-55",
+    "razao": "Empresa B ME",
+    "protocoloRelatorio": ""
+  }
+]
+```
+
+**Nota:** O arquivo é atualizado automaticamente pelos scripts com os protocolos obtidos durante o processamento.
 
 ## Dependências
 

@@ -20,6 +20,9 @@ __pycache__/
 # Variáveis de ambiente
 .env
 
+# Dados sensíveis
+empresas.json
+
 # Arquivos PDF gerados
 *.pdf
 
